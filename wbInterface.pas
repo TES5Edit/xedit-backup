@@ -59,7 +59,7 @@ var
 const
   wbWhatsNewVersion : Integer = 04010200;
   wbDeveloperMessageVersion : Integer = 04000001;
-  wbDevCRC32App : Cardinal = $FFFFFFE9;
+  wbDevCRC32App : Cardinal = $FFFFFFE8;
 
   clOrange       = $004080FF;
   wbFloatDigits  = 6;
@@ -194,6 +194,8 @@ var
   wbCollapseRGBA           : Boolean  = True;
   wbCollapseVec3           : Boolean  = True;
   wbReportInjected         : Boolean  = True;
+  wbNoFullInShortName      : Boolean  = True;
+  wbNoIndexInAliasSummary  : Boolean  = True;
 
   wbGlobalModifedGeneration : UInt64;
 
@@ -1965,10 +1967,13 @@ type
     function SetGetGridCellCallback(const aCallback: TwbMainRecordGetGridCellCallback): IwbMainRecordDef;
 
     function SetToStr(const aToStr : TwbToStrCallback): IwbMainRecordDef{Self};
+
     function SetSummaryKey(const aSummaryKey: array of Integer): {Self}IwbMainRecordDef;
-    function SetSummaryDelimiter(const aDelimiter: string): {Self}IwbMainRecordDef;
     function SetSummaryMemberPrefixSuffix(aIndex: Integer; const aPrefix, aSuffix: string): {Self}IwbMainRecordDef;
-    function ToSummary(const aMainRecord: IwbMainRecord): string;
+    function SetSummaryMemberMaxDepth(aIndex, aMaxDepth: Integer): {Self}IwbMainRecordDef;
+    function SetSummaryDelimiter(const aDelimiter: string): {Self}IwbMainRecordDef;
+
+    function ToSummary(aDepth: Integer; const aMainRecord: IwbMainRecord): string;
 
     property IsReference: Boolean
       read GetIsReference;
@@ -2010,7 +2015,7 @@ type
 
   IwbRecordMemberDef = interface(IwbSignatureDef)
     ['{259F3F08-F4ED-439D-8C1A-48137C84E52A}']
-    function ToSummary(const aElement: IwbElement): string;
+    function ToSummary(aDepth: Integer; const aElement: IwbElement): string;
 
     function IncludeFlag(aFlag: TwbDefFlag; aOnlyWhenTrue : Boolean = True): IwbRecordMemberDef{Self};
 
@@ -2028,7 +2033,7 @@ type
     function SetAfterSet(const aAfterSet : TwbAfterSetCallback): IwbValueDef;
 
     function ToString(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string;
-    function ToSummary(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string;
+    function ToSummary(aDepth: Integer; aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string;
     function ToSortKey(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement; aExtended: Boolean): string;
     function Check(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string;
     function GetSize(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): Integer;
@@ -2107,6 +2112,7 @@ type
     ['{CE0BDAB8-F4FB-42B8-8013-AE7176C0FCD1}']
     function SetSummaryKeyOnValue(const aSummaryKey: array of Integer): {Self}IwbSubRecordWithStructDef;
     function SetSummaryPrefixSuffixOnValue(aIndex: Integer; const aPrefix, aSuffix: string): {Self}IwbSubRecordWithStructDef;
+    function SetSummaryMemberMaxDepthOnValue(aIndex, aMaxDepth: Integer): {Self}IwbSubRecordWithStructDef;
     function SetSummaryDelimiterOnValue(const aDelimiter: string): {Self}IwbSubRecordWithStructDef;
   end;
 
@@ -2122,8 +2128,9 @@ type
   IwbSubRecordStructDef = interface(IwbRecordMemberDef)
     ['{B5441812-5229-488B-AEA6-C182CEBED441}']
     function SetSummaryKey(const aSummaryKey: array of Integer): {Self}IwbSubRecordStructDef;
-    function SetSummaryDelimiter(const aDelimiter: string): {Self}IwbSubRecordStructDef;
     function SetSummaryMemberPrefixSuffix(aIndex: Integer; const aPrefix, aSuffix: string): {Self}IwbSubRecordStructDef;
+    function SetSummaryMemberMaxDepth(aIndex, aMaxDepth: Integer): {Self}IwbSubRecordStructDef;
+    function SetSummaryDelimiter(const aDelimiter: string): {Self}IwbSubRecordStructDef;
   end;
 
   IwbSubRecordUnionDef = interface(IwbRecordMemberDef)
@@ -2263,8 +2270,9 @@ type
     property OptionalFromElement: Integer read GetOptionalFromElement;
 
     function SetSummaryKey(const aSummaryKey: array of Integer): {Self}IwbStructDef;
-    function SetSummaryDelimiter(const aDelimiter: string): {Self}IwbStructDef;
     function SetSummaryMemberPrefixSuffix(aIndex: Integer; const aPrefix, aSuffix: string): {Self}IwbStructDef;
+    function SetSummaryMemberMaxDepth(aIndex, aMaxDepth: Integer): {Self}IwbStructDef;
+    function SetSummaryDelimiter(const aDelimiter: string): {Self}IwbStructDef;
   end;
 
   IwbStructCDef = interface(IwbStructDef)
@@ -4946,6 +4954,7 @@ type
     recSummaryKey         : array of Integer;
     recSummaryPrefix      : TArray<string>;
     recSummarySuffix      : TArray<string>;
+    recSummaryMaxDepth    : TArray<Integer>;
     recSummaryDelimiter   : string;
 
     procedure recBuildReferences;
@@ -5031,10 +5040,11 @@ type
 
     function SetToStr(const aToStr : TwbToStrCallback): IwbMainRecordDef{Self};
     function SetSummaryKey(const aSummaryKey: array of Integer): {Self}IwbMainRecordDef;
-    function SetSummaryDelimiter(const aDelimiter: string): {Self}IwbMainRecordDef;
     function SetSummaryMemberPrefixSuffix(aIndex: Integer; const aPrefix, aSuffix: string): {Self}IwbMainRecordDef;
+    function SetSummaryMemberMaxDepth(aIndex, aMaxDepth: Integer): {Self}IwbMainRecordDef;
+    function SetSummaryDelimiter(const aDelimiter: string): {Self}IwbMainRecordDef;
 
-    function ToSummary(const aMainRecord: IwbMainRecord): string;
+    function ToSummary(aDepth: Integer; const aMainRecord: IwbMainRecord): string;
     {--- IwbMainRecordDefInternal ---}
   end;
 
@@ -5074,7 +5084,7 @@ type
     procedure Report(const aParents: TwbDefPath); override;
 
     {---IwbRecordMemberDef---}
-    function ToSummary(const aElement: IwbElement): string; virtual;
+    function ToSummary(aDepth: Integer; const aElement: IwbElement): string; virtual;
 
     function IncludeFlag(aFlag: TwbDefFlag; aOnlyWhenTrue : Boolean = True): IwbRecordMemberDef{Self};
     function SetAfterLoad(const aAfterLoad : TwbAfterLoadCallback): IwbRecordMemberDef;
@@ -5099,13 +5109,14 @@ type
     {---IwbSubRecordWithStructDef---}
     function SetSummaryKeyOnValue(const aSummaryKey: array of Integer): {Self}IwbSubRecordWithStructDef;
     function SetSummaryPrefixSuffixOnValue(aIndex: Integer; const aPrefix, aSuffix: string): {Self}IwbSubRecordWithStructDef;
+    function SetSummaryMemberMaxDepthOnValue(aIndex, aMaxDepth: Integer): {Self}IwbSubRecordWithStructDef;
     function SetSummaryDelimiterOnValue(const aDelimiter: string): {Self}IwbSubRecordWithStructDef;
   end;
 
   TwbRecordMemberDef = class(TwbBaseSignatureDef, IwbRecordMemberDef)
     {---IwbRecordMemberDef---}
-    function ToSummary(const aElement: IwbElement): string;
-    function ToSummaryInternal(const aElement: IwbElement): string; virtual;
+    function ToSummary(aDepth: Integer; const aElement: IwbElement): string;
+    function ToSummaryInternal(aDepth: Integer; const aElement: IwbElement): string; virtual;
 
     function IncludeFlag(aFlag: TwbDefFlag; aOnlyWhenTrue : Boolean = True): IwbRecordMemberDef{Self};
 
@@ -5152,7 +5163,7 @@ type
                                       : Boolean; override;
 
     {---IwbRecordMemberDef---}
-    function ToSummaryInternal(const aElement: IwbElement): string; override;
+    function ToSummaryInternal(aDepth: Integer; const aElement: IwbElement): string; override;
 
     {---IwbSubRecordArrayDef---}
     function GetElement: IwbRecordMemberDef;
@@ -5169,6 +5180,7 @@ type
     srsSummaryKey        : array of Integer;
     srsSummaryPrefix     : TArray<string>;
     srsSummarySuffix     : TArray<string>;
+    srsSummaryMaxDepth   : TArray<Integer>;
     srsSummaryDelimiter  : string;
   public
     constructor Clone(const aSource: TwbDef); override;
@@ -5224,11 +5236,12 @@ type
     function GetRecordHeaderStruct: IwbStructDef;
 
     {---IwbRecordMemberDef---}
-    function ToSummaryInternal(const aElement: IwbElement): string; override;
-    function SetSummaryMemberPrefixSuffix(aIndex: Integer; const aPrefix, aSuffix: string): {Self}IwbSubRecordStructDef;
+    function ToSummaryInternal(aDepth: Integer; const aElement: IwbElement): string; override;
 
     {---IwbSubRecordStructDef---}
     function SetSummaryKey(const aSummaryKey: array of Integer): {Self}IwbSubRecordStructDef;
+    function SetSummaryMemberPrefixSuffix(aIndex: Integer; const aPrefix, aSuffix: string): {Self}IwbSubRecordStructDef;
+    function SetSummaryMemberMaxDepth(aIndex, aMaxDepth: Integer): {Self}IwbSubRecordStructDef;
     function SetSummaryDelimiter(const aDelimiter: string): {Self}IwbSubRecordStructDef;
   end;
 
@@ -5312,7 +5325,7 @@ type
     function IsInSK(aIndex: Integer): Boolean;
 
     {---IwbRecordMemberDef---}
-    function ToSummaryInternal(const aElement: IwbElement): string; override;
+    function ToSummaryInternal(aDepth: Integer; const aElement: IwbElement): string; override;
   end;
 
   TwbValueDefState = (
@@ -5336,7 +5349,7 @@ type
     function SetAfterSet(const aAfterSet : TwbAfterSetCallback): IwbValueDef;
 
     function ToString(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; reintroduce; virtual; abstract;
-    function ToSummary(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; virtual;
+    function ToSummary(aDepth: Integer; aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; virtual;
     function ToSortKey(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement; aExtended: Boolean): string; virtual;
     function Check(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; virtual;
     function GetSize(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): Integer; virtual; abstract;
@@ -5378,7 +5391,7 @@ type
 
     {---IwbValueDef---}
     function ToString(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
-    function ToSummary(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
+    function ToSummary(aDepth: Integer; aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
     function ToSortKey(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement; aExtended: Boolean): string; override;
     function Check(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
     function GetDefaultSize(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): Integer; override;
@@ -5760,7 +5773,7 @@ type
 
     {---IwbValueDef---}
     function ToString(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
-    function ToSummary(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
+    function ToSummary(aDepth: Integer; aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
     function ToSortKey(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement; aExtended: Boolean): string; override;
     function Check(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
     function GetSize(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): Integer; override;
@@ -5814,7 +5827,7 @@ type
 
     {---IwbValueDef---}
     function ToString(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
-    function ToSummary(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
+    function ToSummary(aDepth: Integer; aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
     function ToSortKey(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement; aExtended: Boolean): string; override;
     function GetSize(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): Integer; override;
     function GetDefaultSize(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): Integer; override;
@@ -5896,7 +5909,7 @@ type
     function GetSize(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): Integer; override;
     function GetDefaultSize(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): Integer; override;
     function ToString(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
-    function ToSummary(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
+    function ToSummary(aDepth: Integer; aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
     function GetIsVariableSizeInternal: Boolean; override;
     function GetCanBeZeroSize: Boolean; override;
     function CanAssign(const aElement: IwbElement; aIndex: Integer; const aDef: IwbDef): Boolean; override;
@@ -5925,6 +5938,7 @@ type
     stOptionalFromElement : Integer;
     stSummaryPrefix       : TArray<string>;
     stSummarySuffix       : TArray<string>;
+    stSummaryMaxDepth     : TArray<Integer>;
     stSummaryDelimiter    : string;
   protected
     constructor Clone(const aSource: TwbDef); override;
@@ -5957,7 +5971,7 @@ type
     function GetSize(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): Integer; override;
     function GetDefaultSize(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): Integer; override;
     function ToString(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
-    function ToSummary(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
+    function ToSummary(aDepth: Integer; aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string; override;
     function ToSortKey(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement; aExtended: Boolean): string; override;
     function GetIsVariableSizeInternal: Boolean; override;
     function CanAssign(const aElement: IwbElement; aIndex: Integer; const aDef: IwbDef): Boolean; override;
@@ -5970,8 +5984,9 @@ type
     function GetOptionalFromElement: Integer;
 
     function SetSummaryKey(const aSummaryKey: array of Integer): {Self}IwbStructDef;
-    function SetSummaryDelimiter(const aDelimiter: string): {Self}IwbStructDef;
     function SetSummaryMemberPrefixSuffix(aIndex: Integer; const aPrefix, aSuffix: string): {Self}IwbStructDef;
+    function SetSummaryMemberMaxDepth(aIndex, aMaxDepth: Integer): {Self}IwbStructDef;
+    function SetSummaryDelimiter(const aDelimiter: string): {Self}IwbStructDef;
   end;
 
   TwbStructCDef = class(TwbStructDef, IwbStructCDef)
@@ -9183,6 +9198,29 @@ begin
   SetArrayEntry(aSuffix, arrSuffix);
 end;
 
+procedure wbSetMaxDepth(aIndex: Integer; aMaxDepth: Integer; var arrMaxDepth: TArray<Integer>);
+
+  procedure SetArrayEntry(const aValue: Integer; var aArray: TArray<Integer>);
+  begin
+    if aValue <> 0 then
+      if Length(aArray) < Succ(aIndex) then
+        SetLength(aArray, Succ(aIndex));
+    if High(aArray) >= aIndex then
+      aArray[aIndex] := aValue;
+  end;
+
+begin
+  SetArrayEntry(aMaxDepth, arrMaxDepth);
+end;
+
+
+function TwbMainRecordDef.SetSummaryMemberMaxDepth(aIndex, aMaxDepth: Integer): IwbMainRecordDef;
+begin
+  Result := Self;
+  Assert(InRange(aIndex, Low(recMembers), High(recMembers)), '[TwbMainRecordDef.SetSummaryMemberMaxDepth] not InRange(aIndex, Low(recMembers), High(recMembers))');
+  wbSetMaxDepth(aIndex, aMaxDepth, recSummaryMaxDepth);
+end;
+
 function TwbMainRecordDef.SetSummaryMemberPrefixSuffix(aIndex: Integer; const aPrefix, aSuffix: string): IwbMainRecordDef;
 begin
   Result := Self;
@@ -9196,15 +9234,30 @@ begin
   ndToStr := aToStr;
 end;
 
-procedure StructKeysToSummary(var Result: string; const aElement: IwbElement; const aMembers: array of IwbRecordMemberDef; const aKeys: array of integer; const aPrefix, aSuffix: array of string; const aDelimiter: string);
-
-  function GetFromArray(const aArray: array of string; aIndex: Integer): string;
-  begin
-    if InRange(aIndex, Low(aArray), High(aArray)) then
-      Result := aArray[aIndex]
-    else
-      Result := '';
+type
+  TFromArray<T> = class
+  public
+    class function Get(const aArray: array of T; aIndex: Integer): T; static;
   end;
+
+class function TFromArray<T>.Get(const aArray: array of T; aIndex: Integer): T;
+begin
+  if InRange(aIndex, Low(aArray), High(aArray)) then
+    Result := aArray[aIndex]
+  else
+    Result := Default(T);
+end;
+
+procedure StructKeysToSummary(aDepth     : Integer;
+                          var Result     : string;
+                        const aElement   : IwbElement;
+                        const aMembers   : array of IwbRecordMemberDef;
+                        const aKeys      : array of integer;
+                        const aPrefix    : array of string;
+                        const aSuffix    : array of string;
+                        const aMaxDepth  : array of integer;
+                        const aDelimiter : string);
+
 
 begin
   var l := Length(aKeys);
@@ -9216,39 +9269,42 @@ begin
       for var i := 0 to Pred(l) do begin
         var SortOrder := aKeys[i];
         if (SortOrder >= Low(aMembers)) and (SortOrder <= High(aMembers)) then begin
-          var Member := CER.ElementBySortOrder[SortOrder + CER.AdditionalElementCount];
-          var MemberCER: IwbContainerElementRef;
-          if not Supports(Member, IwbContainerElementRef, MemberCER) then
-            MemberCER := nil;
-          var RMD: IwbRecordMemberDef;
-          if Assigned(Member) and (Member.ConflictPriority > cpIgnore) and Supports(Member.Def, IwbRecordMemberDef, RMD) then begin
-            var s := RMD.ToSummary(Member).Trim;
-            if s <> '' then begin
-              var Prefix := GetFromArray(aPrefix, SortOrder);
-              var Suffix := GetFromArray(aSuffix, SortOrder);
-              var HasFix := (Prefix <> '') or (Suffix <> '');
-              var NoName := MembersNoName or (dfSummaryNoName in RMD.DefFlags);
+          var MaxDepth := TFromArray<Integer>.Get(aMaxDepth, SortOrder);
+          if (MaxDepth = 0) or (aDepth < MaxDepth) then begin
+            var Member := CER.ElementBySortOrder[SortOrder + CER.AdditionalElementCount];
+            var MemberCER: IwbContainerElementRef;
+            if not Supports(Member, IwbContainerElementRef, MemberCER) then
+              MemberCER := nil;
+            var RMD: IwbRecordMemberDef;
+            if Assigned(Member) and (Member.ConflictPriority > cpIgnore) and Supports(Member.Def, IwbRecordMemberDef, RMD) then begin
+              var s := RMD.ToSummary(Succ(aDepth), Member).Trim;
+              if s <> '' then begin
+                var Prefix := TFromArray<string>.Get(aPrefix, SortOrder);
+                var Suffix := TFromArray<string>.Get(aSuffix, SortOrder);
+                var HasFix := (Prefix <> '') or (Suffix <> '');
+                var NoName := MembersNoName or (dfSummaryNoName in RMD.DefFlags);
 
-              if Result <> '' then begin
-                if DelayedName <> '' then begin
-                  Result := DelayedName + ':(' + Result + ')';
-                  DelayedName := '';
+                if Result <> '' then begin
+                  if DelayedName <> '' then begin
+                    Result := DelayedName + ':(' + Result + ')';
+                    DelayedName := '';
+                  end;
+                  Result := Result + aDelimiter;
                 end;
-                Result := Result + aDelimiter;
-              end;
 
-              var t := RMD.Name;
-              if (MemberCER.ElementType = etSubRecordArray) and (MemberCER.ElementCount = 1) then
-                t := RMD.GetSingularName;
+                var t := RMD.Name;
+                if (MemberCER.ElementType = etSubRecordArray) and (MemberCER.ElementCount = 1) then
+                  t := RMD.GetSingularName;
 
-              if NoName or HasFix or s.StartsWith(t + ':(', True) then
-                Result := Result + Prefix + s + Suffix
-              else begin
-                if Result = '' then begin
-                  DelayedName := t;
-                  Result := s;
-                end else
-                  Result := Result + t + ':(' + s + ')';
+                if NoName or HasFix or s.StartsWith(t + ':(', True) then
+                  Result := Result + Prefix + s + Suffix
+                else begin
+                  if Result = '' then begin
+                    DelayedName := t;
+                    Result := s;
+                  end else
+                    Result := Result + t + ':(' + s + ')';
+                end;
               end;
             end;
           end;
@@ -9258,14 +9314,14 @@ begin
   end;
 end;
 
-function TwbMainRecordDef.ToSummary(const aMainRecord: IwbMainRecord): string;
+function TwbMainRecordDef.ToSummary(aDepth: Integer; const aMainRecord: IwbMainRecord): string;
 begin
   Result := '';
   if Assigned(ndToStr) then
     ndToStr(Result, aMainRecord.DataBasePtr, aMainRecord.DataEndPtr, aMainRecord, ctToSummary);
 
   if Result = '' then
-    StructKeysToSummary(Result, aMainRecord, recMembers, recSummaryKey, recSummaryPrefix, recSummarySuffix, recSummaryDelimiter);
+    StructKeysToSummary(aDepth, Result, aMainRecord, recMembers, recSummaryKey, recSummaryPrefix, recSummarySuffix, recSummaryMaxDepth, recSummaryDelimiter);
 end;
 
 destructor TwbMainRecordDef.Destroy;
@@ -9544,6 +9600,12 @@ begin
   (srValue as IwbStructDef).SetSummaryKey(aSummaryKey);
 end;
 
+function TwbSubRecordDef.SetSummaryMemberMaxDepthOnValue(aIndex, aMaxDepth: Integer): IwbSubRecordWithStructDef;
+begin
+  Result := Self;
+  (srValue as IwbStructDef).SetSummaryMemberMaxDepth(aIndex, aMaxDepth);
+end;
+
 function TwbSubRecordDef.SetSummaryPrefixSuffixOnValue(aIndex: Integer; const aPrefix, aSuffix: string): IwbSubRecordWithStructDef;
 begin
   Result := Self;
@@ -9556,7 +9618,7 @@ begin
   ndToStr := aToStr;
 end;
 
-function TwbSubRecordDef.ToSummary(const aElement: IwbElement): string;
+function TwbSubRecordDef.ToSummary(aDepth: Integer; const aElement: IwbElement): string;
 begin
   Result := '';
   if Assigned(ndToStr) then
@@ -9564,7 +9626,7 @@ begin
   if (Result = '') and Assigned(aElement) and Assigned(srValue) then begin
     var DataContainer: IwbDataContainer;
     if Supports(aElement, IwbDataContainer, DataContainer) then
-      Result := srValue.ToSummary(DataContainer.DataBasePtr, DataContainer.DataEndPtr, aElement);
+      Result := srValue.ToSummary(aDepth, DataContainer.DataBasePtr, DataContainer.DataEndPtr, aElement);
   end;
 end;
 
@@ -9678,7 +9740,7 @@ begin
   defReported := True;
 end;
 
-function TwbSubRecordArrayDef.ToSummaryInternal(const aElement: IwbElement): string;
+function TwbSubRecordArrayDef.ToSummaryInternal(aDepth: Integer; const aElement: IwbElement): string;
 begin
   Result := '';
   var CER: IwbContainerElementRef;
@@ -9689,7 +9751,7 @@ begin
         var Element := CER.Elements[0];
         var RMD: IwbRecordMemberDef;
         if Supports(Element.Def, IwbRecordMemberDef, RMD) then
-          Result := RMD.ToSummary(Element).Trim;
+          Result := RMD.ToSummary(Succ(aDepth), Element).Trim;
         if Result <> '' then
           Exit(Result);
       end;
@@ -9727,6 +9789,7 @@ begin
     Self.srsSummaryKey := Copy(srsSummaryKey);
     Self.srsSummaryPrefix := Copy(srsSummaryPrefix);
     Self.srsSummarySuffix := Copy(srsSummarySuffix);
+    Self.srsSummaryMaxDepth := Copy(srsSummaryMaxDepth);
     Self.srsSummaryDelimiter := srsSummaryDelimiter;
   end;
 end;
@@ -9983,6 +10046,13 @@ begin
     srsSummaryKey[i] := aSummaryKey[i];
 end;
 
+function TwbSubRecordStructDef.SetSummaryMemberMaxDepth(aIndex, aMaxDepth: Integer): IwbSubRecordStructDef;
+begin
+  Result := Self;
+  Assert(InRange(aIndex, Low(srsMembers), High(srsMembers)), '[TwbSubRecordStructDef.SetSummaryMemberMaxDepth] not InRange(aIndex, Low(srsMembers), High(srsMembers))');
+  wbSetMaxDepth(aIndex, aMaxDepth, srsSummaryMaxDepth);
+end;
+
 function TwbSubRecordStructDef.SetSummaryMemberPrefixSuffix(aIndex: Integer; const aPrefix, aSuffix: string): IwbSubRecordStructDef;
 begin
   Result := Self;
@@ -9990,14 +10060,14 @@ begin
   wbSetPrefixSuffix(aIndex, aPrefix, aSuffix, srsSummaryPrefix, srsSummarySuffix);
 end;
 
-function TwbSubRecordStructDef.ToSummaryInternal(const aElement: IwbElement): string;
+function TwbSubRecordStructDef.ToSummaryInternal(aDepth: Integer; const aElement: IwbElement): string;
 var
   CER: IwbContainerElementRef;
   MemberCER: IwbContainerElementRef;
   SRS: IwbSubRecordStruct;
 begin
   Result := '';
-  StructKeysToSummary(Result, aElement, srsMembers, srsSummaryKey, srsSummaryPrefix, srsSummarySuffix, srsSummaryDelimiter);
+  StructKeysToSummary(aDepth, Result, aElement, srsMembers, srsSummaryKey, srsSummaryPrefix, srsSummarySuffix, srsSummaryMaxDepth, srsSummaryDelimiter);
 end;
 
 { TwbSubRecordUnionDef }
@@ -11028,7 +11098,7 @@ begin
   Used(aElement, Result);
 end;
 
-function TwbIntegerDef.ToSummary(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string;
+function TwbIntegerDef.ToSummary(aDepth: Integer; aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string;
 var
   Len         : Cardinal;
   Value       : Int64;
@@ -11487,7 +11557,7 @@ begin
   Used(aElement, Result);
 end;
 
-function TwbArrayDef.ToSummary(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string;
+function TwbArrayDef.ToSummary(aDepth: Integer; aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string;
 begin
   Result := '';
   if Assigned(ndToStr) then
@@ -11526,6 +11596,7 @@ begin
     Self.stSummaryKey := Copy(stSummaryKey);
     Self.stSummaryPrefix := Copy(stSummaryPrefix);
     Self.stSummarySuffix := Copy(stSummarySuffix);
+    Self.stSummaryMaxDepth := Copy(stSummaryMaxDepth);
     Self.stSummaryDelimiter := stSummaryDelimiter;
   end;
 end;
@@ -11773,6 +11844,13 @@ begin
     stSummaryKey[i] := aSummaryKey[i];
 end;
 
+function TwbStructDef.SetSummaryMemberMaxDepth(aIndex, aMaxDepth: Integer): IwbStructDef;
+begin
+  Result := Self;
+  Assert(InRange(aIndex, Low(stMembers), High(stMembers)), '[TwbStructDef.SetSummaryMemberMaxDepth] not InRange(aIndex, Low(stMembers), High(stMembers))');
+  wbSetMaxDepth(aIndex, aMaxDepth, stSummaryMaxDepth);
+end;
+
 function TwbStructDef.SetSummaryMemberPrefixSuffix(aIndex: Integer; const aPrefix, aSuffix: string): IwbStructDef;
 begin
   Result := Self;
@@ -11871,7 +11949,7 @@ begin
   Used(aElement, Result);
 end;
 
-function TwbStructDef.ToSummary(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string;
+function TwbStructDef.ToSummary(aDepth: Integer; aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string;
 var
   CER         : IwbContainerElementRef;
   MemberUsed  : array of Boolean;
@@ -11879,14 +11957,6 @@ var
   MembersNoName      : Boolean;
 
   procedure Process(const Keys: array of integer);
-
-    function GetFromArray(const aArray: array of string; aIndex: Integer): string;
-    begin
-      if InRange(aIndex, Low(aArray), High(aArray)) then
-        Result := aArray[aIndex]
-      else
-        Result := '';
-    end;
 
   begin
     for var i := Low(Keys) to High(Keys) do begin
@@ -11898,40 +11968,43 @@ var
           Continue;
         MemberUsed[SortMember] := True;
 
-        var Element := CER.ElementBySortOrder[SortMember + CER.AdditionalElementCount];
-        var DC: IwbDataContainer;
-        var MemberCER: IwbContainerElementRef;
-        if Supports(Element, IwbContainerElementRef, MemberCER) and Supports(Element, IwbDataContainer, DC) and (Element.ConflictPriority > cpIgnore) then begin
-          var MemberDef := stMembers[SortMember];
-          Assert(MemberDef.Equals(DC.Def));
-          var s:= MemberDef.ToSummary(DC.DataBasePtr, DC.DataEndPtr, DC).Trim;
-          if s <> '' then begin
-            var Prefix := GetFromArray(stSummaryPrefix, SortMember);
-            var Suffix := GetFromArray(stSummarySuffix, SortMember);
-            var HasFix := (Prefix <> '') or (Suffix <> '');
+        var MaxDepth := TFromArray<Integer>.Get(stSummaryMaxDepth, SortMember);
+        if (MaxDepth = 0) or (aDepth < MaxDepth) then begin
+          var Element := CER.ElementBySortOrder[SortMember + CER.AdditionalElementCount];
+          var DC: IwbDataContainer;
+          var MemberCER: IwbContainerElementRef;
+          if Supports(Element, IwbContainerElementRef, MemberCER) and Supports(Element, IwbDataContainer, DC) and (Element.ConflictPriority > cpIgnore) then begin
+            var MemberDef := stMembers[SortMember];
+            Assert(MemberDef.Equals(DC.Def));
+            var s:= MemberDef.ToSummary(Succ(aDepth), DC.DataBasePtr, DC.DataEndPtr, DC).Trim;
+            if s <> '' then begin
+              var Prefix := TFromArray<string>.Get(stSummaryPrefix, SortMember);
+              var Suffix := TFromArray<string>.Get(stSummarySuffix, SortMember);
+              var HasFix := (Prefix <> '') or (Suffix <> '');
 
-            if Result <> '' then begin
-              if DelayedName <> '' then begin
-                Result := DelayedName + ':(' + Result + ')';
-                DelayedName := '';
+              if Result <> '' then begin
+                if DelayedName <> '' then begin
+                  Result := DelayedName + ':(' + Result + ')';
+                  DelayedName := '';
+                end;
+                Result := Result + stSummaryDelimiter;
               end;
-              Result := Result + stSummaryDelimiter;
+
+              var t := MemberDef.Name;
+              if (MemberCER.ElementType = etArray) and (MemberCER.ElementCount = 1) then
+                t := MemberDef.GetSingularName;
+
+              if MembersNoName or HasFix or s.StartsWith(t + ':(', True) then
+                Result := Result + Prefix + s + Suffix
+              else begin
+                if Result = '' then begin
+                  DelayedName := t;
+                  Result := s;
+                end else
+                  Result := Result + t + ':(' + s + ')';
+              end;
+
             end;
-
-            var t := MemberDef.Name;
-            if (MemberCER.ElementType = etArray) and (MemberCER.ElementCount = 1) then
-              t := MemberDef.GetSingularName;
-
-            if MembersNoName or HasFix or s.StartsWith(t + ':(', True) then
-              Result := Result + Prefix + s + Suffix
-            else begin
-              if Result = '' then begin
-                DelayedName := t;
-                Result := s;
-              end else
-                Result := Result + t + ':(' + s + ')';
-            end;
-
           end;
         end;
       end;
@@ -13588,9 +13661,9 @@ begin
     ndToStr(Result, aBasePtr, aEndPtr, aElement, ctToStr);
 end;
 
-function TwbFloatDef.ToSummary(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string;
+function TwbFloatDef.ToSummary(aDepth: Integer; aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string;
 begin
-  Result := inherited ToSummary(aBasePtr, aEndPtr, aElement);
+  Result := inherited ToSummary(aDepth, aBasePtr, aEndPtr, aElement);
   if Pos('.', Result) > 0 then begin
     var l := Length(Result);
     while l > 1 do
@@ -15666,7 +15739,7 @@ begin
       Result := StringOfChar('0', Length(Result));
 end;
 
-function TwbValueDef.ToSummary(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string;
+function TwbValueDef.ToSummary(aDepth: Integer; aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string;
 begin
   Result := '';
   if Assigned(ndToStr) then
@@ -15749,14 +15822,14 @@ begin
   Result := (aIndex >= Low(srsMemberInSK)) and (aIndex <= High(srsMemberInSK)) and srsMemberInSK[aIndex];
 end;
 
-function TwbSubRecordStructSKDef.ToSummaryInternal(const aElement: IwbElement): string;
+function TwbSubRecordStructSKDef.ToSummaryInternal(aDepth: Integer; const aElement: IwbElement): string;
 begin
   Result := '';
   if not (dfSummaryNoSortKey in defFlags) then begin
-    StructKeysToSummary(Result, aElement, srsMembers, srsSortKey, srsSummaryPrefix, srsSummarySuffix, srsSummaryDelimiter);
-    StructKeysToSummary(Result, aElement, srsMembers, srsExSortKey, srsSummaryPrefix, srsSummarySuffix, srsSummaryDelimiter);
+    StructKeysToSummary(aDepth, Result, aElement, srsMembers, srsSortKey, srsSummaryPrefix, srsSummarySuffix, srsSummaryMaxDepth, srsSummaryDelimiter);
+    StructKeysToSummary(aDepth, Result, aElement, srsMembers, srsExSortKey, srsSummaryPrefix, srsSummarySuffix, srsSummaryMaxDepth, srsSummaryDelimiter);
   end;
-  var s := inherited ToSummaryInternal(aElement);
+  var s := inherited ToSummaryInternal(aDepth, aElement);
   if s <> '' then begin
     if Result <> '' then
       Result := Result + ' ';
@@ -16568,7 +16641,7 @@ begin
   Used(aElement, Result);
 end;
 
-function TwbResolvableDef.ToSummary(aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string;
+function TwbResolvableDef.ToSummary(aDepth: Integer; aBasePtr, aEndPtr: Pointer; const aElement: IwbElement): string;
 var
   ValueDef : IwbValueDef;
 begin
@@ -16579,7 +16652,7 @@ begin
   if Result = '' then begin
     var Element := aElement;
     ValueDef := ResolveDefAndElement(aBasePtr, aEndPtr, Element);
-    Result := ValueDef.ToSummary(aBasePtr, aEndPtr, Element);
+    Result := ValueDef.ToSummary(aDepth, aBasePtr, aEndPtr, Element);
   end;
 
   Used(aElement, Result);
@@ -18795,16 +18868,16 @@ begin
   ndToStr := aToStr;
 end;
 
-function TwbRecordMemberDef.ToSummary(const aElement: IwbElement): string;
+function TwbRecordMemberDef.ToSummary(aDepth: Integer; const aElement: IwbElement): string;
 begin
   Result := '';
   if Assigned(ndToStr) then
     ndToStr(Result, nil, nil, aElement, ctToSummary);
   if (Result = '') then
-    Result := ToSummaryInternal(aElement);
+    Result := ToSummaryInternal(aDepth, aElement);
 end;
 
-function TwbRecordMemberDef.ToSummaryInternal(const aElement: IwbElement): string;
+function TwbRecordMemberDef.ToSummaryInternal(aDepth: Integer; const aElement: IwbElement): string;
 begin
   Result := '';
 end;

@@ -243,6 +243,7 @@ type
     function Reached: Boolean;
     procedure TryAssignMembers(const aSource: IwbElement);
     procedure ResetModified(aResetModified: TwbResetModified);
+    procedure FlagAsOptionalAndMissing;
 
     function BeginResolve: Boolean;
     procedure EndResolve;
@@ -302,6 +303,7 @@ type
     procedure SetNameSuffix(const aSuffix: string); virtual;
     function GetNameSuffix: string; virtual;
     procedure TryAssignMembers(const aSource: IwbElement); virtual;
+    procedure FlagAsOptionalAndMissing;
 
     function BeginResolve: Boolean;
     procedure EndResolve;
@@ -389,6 +391,7 @@ type
     procedure SetToDefault;
     procedure SetToDefaultInternal; virtual;
     procedure SetToDefaultIfAsCreatedEmpty; virtual;
+    function ContentIsAllZero: Boolean; virtual;
 
     function ShouldReportError(aErrorType: TwbElementErrorType): Boolean;
 
@@ -508,6 +511,7 @@ type
     procedure DoInit(aNeedSorted: Boolean); virtual;
 
     function HasErrors: Boolean; override;
+    function ContentIsAllZero: Boolean; override;
 
     function GetSortKeyInternal(aExtended: Boolean): string; override;
     function GetDataSize: Integer; override;
@@ -853,6 +857,8 @@ type
     function GetDataPrefixSize: Integer; virtual;
 
     function GetResolvedValueDef: IwbValueDef; override;
+
+    function ContentIsAllZero: Boolean; override;
 
     procedure InvalidateStorage; override;
     procedure SetContainer(const aContainer: IwbContainer); override;
@@ -5578,6 +5584,22 @@ begin
         Result := Elements[i].CompareExchangeFormID(aOldFormID, aNewFormID) or Result;
   finally
     EndUpdate;
+  end;
+end;
+
+function TwbContainer.ContentIsAllZero: Boolean;
+var
+  SelfRef : IwbContainerElementRef;
+  i       : Integer;
+begin
+  SelfRef := Self as IwbContainerElementRef;
+  DoInit(False);
+
+  Result := True;
+  for i := Low(cntElements) to High(cntElements) do begin
+    Result := cntElements[i].ContentIsAllZero;
+    if not Result then
+      Exit;
   end;
 end;
 
@@ -15785,6 +15807,11 @@ begin
   Result := False;
 end;
 
+function TwbElement.ContentIsAllZero: Boolean;
+begin
+  Result := False;
+end;
+
 function CompareLoadOrderSL(List: TStringList; Index1, Index2: Integer): Integer;
 begin
   if Index1 = Index2 then begin
@@ -15929,6 +15956,11 @@ end;
 procedure TwbElement.FindUsedMasters(aMasters: PwbUsedMasters);
 begin
   {can be overriden}
+end;
+
+procedure TwbElement.FlagAsOptionalAndMissing;
+begin
+  Include(eStates, esOptionalAndMissing);
 end;
 
 procedure TwbElement.FreeInstance;
@@ -18391,6 +18423,7 @@ begin
     if ValueDef.DefType = dtResolvable then
       ValueDef := Resolve(ValueDef, nil, nil, aContainer);
 
+    Over := False;
     if Assigned(aBasePtr) and (i >= OptionalFromElement) then begin
       over := (NativeUInt(aBasePtr) >= NativeUInt(aEndPtr));
       if not over then begin
@@ -18402,9 +18435,9 @@ begin
         aEndPtr := aBasePtr;
         ValueDef := Resolve(ValueDef, aBasePtr, aEndPtr, aContainer);
         if Supports(ValueDef, IwbIntegerDef, IntegerDef) and Supports(IntegerDef.Formater[aContainer], IwbFlagsDef) then
-          ValueDef := wbEmpty(ValueDef.Name, cpIgnore, False, nil, True)
+          ValueDef := wbEmpty(ValueDef.Name, ValueDef.ConflictPriority[nil], False, nil, True)
         else
-          ValueDef := wbEmpty(ValueDef.Name, cpIgnore);
+          ValueDef := wbEmpty(ValueDef.Name, ValueDef.ConflictPriority[nil]);
       end;
     end;
 
@@ -18416,6 +18449,9 @@ begin
     else
       Element := TwbValue.Create(aContainer, aBasePtr, aEndPtr, ValueDef, '');
     end;
+
+    if Over then
+      Element.FlagAsOptionalAndMissing;
 
     {if wbHideUnused and not wbEditAllowed and (Element.GetName = 'Unused') then begin
       with aContainer do begin
@@ -19428,6 +19464,23 @@ begin
       Include(dcFlags, dcfDontSave);
   end;}
   inherited;
+end;
+
+function TwbDataContainer.ContentIsAllZero: Boolean;
+var
+  Run: PByte;
+begin
+  if (dcfStorageInvalid in dcFlags) then
+    UpdateStorageFromElements;
+  if Assigned(dcDataBasePtr) and Assigned(dcDataEndPtr) then begin
+    Run := dcDataBasePtr;
+    while NativeUInt(Run) < NativeUInt(dcDataEndPtr) do begin
+      if Run^ <> 0 then
+        Exit(False);
+      Inc(Run);
+    end;
+  end;
+  Result := True;
 end;
 
 constructor TwbDataContainer.Create(const aContainer: IwbContainer; var aBasePtr: Pointer; var aEndPtr: Pointer; const aPrevMainRecord : IwbMainRecord);

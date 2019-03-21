@@ -52,7 +52,7 @@ var
     Major   : 4;
     Minor   : 1;
     Release : 2;
-    Build   : 'b';
+    Build   : 'c';
     Title   : 'EXTREMELY EXPERIMENTAL';
   );
 
@@ -539,6 +539,10 @@ type
 
   TwbDefTypes = set of TwbDefType;
 
+  TwbDefTypesHelper = record helper for TwbDefTypes
+    function Count: Integer;
+  end;
+
   TwbGroupTypes = set of Byte;
 
 var
@@ -662,6 +666,9 @@ type
 
   TwbElementTypes = set of TwbElementType;
 
+  TwbElementTypesHelper = record helper for TwbElementTypes
+    function Count: Integer;
+  end;
 
   IwbContainer = interface;
   IwbFile = interface;
@@ -692,6 +699,7 @@ type
     esFound,
     esLocalized,
     esNotLocalized,
+    esOptionalAndMissing,
 
     //the following entries must match TwbElementErrorType:
     esReportedErrorReading,
@@ -899,6 +907,7 @@ type
     procedure SetToDefault;
     procedure SetToDefaultIfAsCreatedEmpty;
     function ResetLeafFirst: Boolean;
+    function ContentIsAllZero: Boolean;
 
     function ShouldReportError(aErrorType: TwbElementErrorType): Boolean;
 
@@ -19289,6 +19298,26 @@ end;
 function DummyIntegerFunction: Integer;
 begin
   Result := 0;
+end;
+
+{ TwbDefTypesHelper }
+
+function TwbDefTypesHelper.Count: Integer;
+begin
+  Result := 0;
+  for var i:= Low(TwbDefType) to High(TwbDefType) do
+    if i in Self then
+      Inc(Result);
+end;
+
+{ TwbElementTypesHelper }
+
+function TwbElementTypesHelper.Count: Integer;
+begin
+  Result := 0;
+  for var i:= Low(TwbElementType) to High(TwbElementType) do
+    if i in Self then
+      Inc(Result);
 end;
 
 initialization
